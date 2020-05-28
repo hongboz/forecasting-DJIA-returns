@@ -1,0 +1,102 @@
+---
+title: "Data Analysis Project"
+author: "Hongbo Zhang"
+date: "04/04/2020"
+output: pdf_document
+---
+
+## Objective: Forecast the Dow Jones Industrial Average monthly excess return for March and April, 2020 as accurately as possible using the monthly excess returns from January 2000 to February 2020.
+
+Data Obtained from "https://ca.finance.yahoo.com/quote/%5EDJI/history?p=%5EDJI" with added column "Monthly Excess Returns (MER)" calculated in Microsoft Excel.
+
+```{r}
+df <- read.csv("DJI.csv")
+mer <- df$MER
+plot(mer, type = "l")
+```
+
+## Removing trend and seasonality by differencing once with lag = 1
+
+```{r}
+Dmer <- diff(mer, 1, 1)
+plot(Dmer, type = "l")
+```
+
+## Testing for stationarity
+
+```{r}
+library(tseries)
+
+acf(Dmer)
+
+adf.test(Dmer)
+
+kpss.test(Dmer)
+
+```
+
+The ACF plots indicates that there is only 1 lag after the 1st that exceeds the 95% CI of the ACF which is a good indication of stationarity.
+
+The Augmented Dickey-Fuller test yields a p-value of less than 0.01 which suggests that we should reject the null that the time series has unit roots.
+
+The KPSS test yields a p-value greater than 0.1 which means that we fail to reject the null hypothesis
+that the time series is stationary.
+ 
+Because our data passes these tests, it means that it is stationary and we do not need to apply any more transformations.
+
+## Modeling
+
+```{r}
+pacf(Dmer)
+```
+
+Since our ACF cuts off at the 1st lag and PACF cuts off at the 4th lag, we should try and fit an ARIMA (4,1,1) model to the original data.
+
+```{r}
+fit1 <- arima(mer, order = c(4,1,1))
+fit1
+```
+
+Manually calculating the coefficients/(1.96*Std.error) to test for the significance of each of them.
+$\phi_1$/(1.96*SE) =  0.251
+$\phi_2$/(1.96*SE) =  -0.566
+$\phi_3$/(1.96*SE) =  0.487
+$\phi_4$/(1.96*SE) =  0.696
+$\theta_1$/(1.96*SE) =  7.22
+
+Manually calculating the AICC from Equation 5.5.4 in the textbook: AICC = -2(log likelihood) + 2(p + q + 1)n/(n - p - q - 2) = -831.48
+
+We see that all of the AR coefficients are not significant so we will refit the model with those set to 0; which is just a ARIMA (0,1,1) model to the original data.
+
+```{r}
+fit2 <- arima(mer, order = c(0,1,1))
+fit2
+```
+
+Manually calculating the AICC from Equation 5.5.4 in the textbook: AICC = -2(log likelihood) + 2(p + q + 1)n/(n - p - q - 2) = -835.29
+
+Since this AICC is less than the one of the previous model, we conclude that this model is slightly better.
+
+## Diagnostics
+
+```{r, fig.show = 'hide'}
+plot(fit2$residuals)
+qqnorm(fit2$residuals)
+
+acf(fit2$residuals)
+pacf(fit2$residuals)
+
+Box.test(fit2$residuals, type = c("Ljung"))
+```
+
+The QQ plot shows that our residuals are approximately normal. The ACF and PACF both look fine as there are no significant lags which suggests our residuals are white noise. The residuals also pass the Ljung-Box test as a p-value of 0.7487 means that we fail to reject the null hypothesis that the residuals are independent.
+
+Since the residuals look good, we're ready to predict.
+
+## Predictions
+```{r}
+predict(fit2, 2)
+```
+
+The predicted monthly excess return for March and April are 0.003043265 and 0.003043265. A 95% CI for the predictions are [-0.0794, 0.0855] and [-0.0794, 0.0855].
+
